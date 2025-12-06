@@ -1067,7 +1067,7 @@ const VotingTab = ({ isAdmin, account, showToast }) => {
         });
       });
 
-      showToast("投票更新成功");
+      showToast("✅ 投票成功！已更新紀錄");
       
     } catch (e) {
       console.error("投票失敗:", e);
