@@ -1414,7 +1414,8 @@ const VotingTab = ({ isAdmin, account, showToast }) => {
                 </div>
               </div>
             ))}
-            {!hasVoted && !expired && (
+    {/* 修正版：只要沒過期，按鈕永遠顯示，讓住戶可以改票 */}
+            {!expired && (
               <div
                 style={{
                   display: "grid",
@@ -1429,6 +1430,7 @@ const VotingTab = ({ isAdmin, account, showToast }) => {
                     onClick={() => handleVote(vote, idx)}
                     style={{
                       ...styles.btnSecondary,
+                      // 如果需要，未來可以在這裡加入判斷式來高亮顯示已選項目
                       backgroundColor: "white",
                       border: "1px solid #E2E8F0",
                       color: "#0F172A",
@@ -1439,13 +1441,15 @@ const VotingTab = ({ isAdmin, account, showToast }) => {
                 ))}
               </div>
             )}
+
+            {/* 修正版：提示文字改為「可修改」 */}
             {hasVoted && (
               <div
                 style={{
                   textAlign: "center",
                   fontSize: "13px",
                   color: "#10B981",
-                  marginTop: "24px",
+                  marginTop: "16px",
                   padding: "12px",
                   backgroundColor: "#ECFDF5",
                   borderRadius: "12px",
@@ -1456,7 +1460,8 @@ const VotingTab = ({ isAdmin, account, showToast }) => {
                   gap: "8px",
                 }}
               >
-                <CheckCircle size={16} /> 您已完成投票
+                <CheckCircle size={16} /> 
+                {expired ? "您已完成投票" : "已登記 (若需修改請直接點選其他選項)"}
               </div>
             )}
             {isAdmin && (
