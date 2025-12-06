@@ -18,6 +18,7 @@ import {
   limit,
   Timestamp,
   getDocs,
+  runTransaction,
 } from "firebase/firestore";
 import {
   Home,
@@ -1003,28 +1004,80 @@ const VotingTab = ({ isAdmin, account, showToast }) => {
     }
   };
 
+    // --- 新版改票邏輯開始 ---
   const handleVote = async (vote, idx) => {
-    if (vote.votedUsers.includes(account.unit)) {
-      showToast("此戶號已投票", "error");
-      return;
-    }
-    const newOpts = [...vote.options];
-    newOpts[idx].count++;
-    const newRecord = {
-      unit: account.unit,
-      option: newOpts[idx].label,
-      time: Timestamp.now(),
-    };
-    await updateDoc(
-      doc(db, "artifacts", appId, "public", "data", "votes", vote.id),
-      {
-        options: newOpts,
-        votedUsers: [...vote.votedUsers, account.unit],
-        voteRecords: [...(vote.voteRecords || []), newRecord],
+    // 防呆：如果沒登入或資料不全
+    if (!account || !account.unit) return;
+
+    try {
+      await runTransaction(db, async (transaction) => {
+        // 1. 鎖定這張選票，確保多人同時投票也不會出錯
+        const voteRef = doc(db, "artifacts", appId, "public", "data", "votes", vote.id);
+        const sfDoc = await transaction.get(voteRef);
+
+        if (!sfDoc.exists()) {
+          throw new Error("投票資料不存在");
+        }
+
+        const data = sfDoc.data();
+        const currentOptions = data.options;
+        const targetOptionLabel = currentOptions[idx].label;
+        
+        // 2. 檢查這位住戶之前的投票紀錄
+        // 為了相容舊資料，我們從 voteRecords 裡面找該戶號「最後一次」的紀錄
+        const records = data.voteRecords || [];
+        // 找到該戶號最後一次的投票紀錄
+        const lastRecord = [...records].reverse().find(r => r.unit === account.unit);
+        
+        // 情況 A：如果要投的跟原本一樣，就不浪費資源
+        if (lastRecord && lastRecord.option === targetOptionLabel) {
+           return; // 什麼都不做，直接結束
+        }
+
+        // 情況 B：之前投過別的 -> 把舊的那一票扣掉
+        if (lastRecord) {
+           const oldOptionIndex = currentOptions.findIndex(o => o.label === lastRecord.option);
+           if (oldOptionIndex !== -1 && currentOptions[oldOptionIndex].count > 0) {
+             currentOptions[oldOptionIndex].count--;
+           }
+        }
+
+        // 情況 C：把新選的那一票加上去
+        currentOptions[idx].count++;
+
+        // 3. 準備新的紀錄
+        const newRecord = {
+          unit: account.unit,
+          option: targetOptionLabel,
+          time: Timestamp.now(),
+        };
+
+        // 4. 寫入資料庫
+        // 注意：我們不需要從 votedUsers 移除他，因為他還是屬於「已投票」狀態
+        // 但我們要把 votedUsers 加進去(如果是第一次投)
+        let newVotedUsers = data.votedUsers || [];
+        if (!newVotedUsers.includes(account.unit)) {
+          newVotedUsers.push(account.unit);
+        }
+
+        transaction.update(voteRef, {
+          options: currentOptions,
+          votedUsers: newVotedUsers,
+          voteRecords: [...records, newRecord] // 追加一筆新紀錄
+        });
+      });
+
+      showToast("投票更新成功");
+      
+    } catch (e) {
+      console.error("投票失敗:", e);
+      // 如果是因為重複點選一樣的選項(上面情況A)，我們不視為錯誤，但也不顯示成功
+      if (e.message !== "投票資料不存在") {
+         // 可以在這裡處理其他錯誤
       }
-    );
-    showToast("投票成功");
+    }
   };
+  // --- 新版改票邏輯結束 ---
 
   const isExpired = (vote) =>
     vote.deadline && new Date() > vote.deadline.toDate();
