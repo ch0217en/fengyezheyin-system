@@ -18,12 +18,13 @@ import {
   limit,
   Timestamp,
   getDocs,
-  runTransaction,
 } from "firebase/firestore";
 import {
   Home,
   Vote,
-  MessageSquare,
+  PieChart,
+  TrendingUp,   // 新增：收入圖示
+  TrendingDown, // 新增：支出圖示
   CreditCard,
   Bell,
   Plus,
@@ -55,12 +56,10 @@ import {
 
 /* ----------------------------------------------------------------
    Project: 丰野哲隱三期住戶通 (Fengye Zheyin Phase 3 Community App)
-   Version: v2.8.1 (Fixes: Localization, Layout, Unpin Feature)
+   Version: v3.0.0 (Feature: Enhanced Finance Report)
    Updates: 
-   - Fixed English text to Traditional Chinese.
-   - Removed year from fees for perennial use.
-   - Added "Unpin" button for admins.
-   - Adjusted bottom padding to avoid Sandbox watermark overlap.
+   - Integrated detailed FinanceTab with income/expense tracking.
+   - Added currency formatting and visual indicators.
    ---------------------------------------------------------------- 
 */
 
@@ -82,42 +81,17 @@ const appId = "fengye-community";
 
 // --- Constants ---
 const COMMUNITY_UNITS = [
-  "A1-1F",
-  "A1-2F",
-  "A1-3F",
-  "A1-4F",
-  "A2-1F",
-  "A2-2F",
-  "A2-3F",
-  "A2-4F",
-  "A3-2F",
-  "A3-3F",
-  "A3-4F",
-  "A5-2F",
-  "A5-3F",
-  "A5-4F",
-  "B1-2F",
-  "B1-3F",
-  "B1-4F",
-  "B2-1F",
-  "B2-2F",
-  "B2-3F",
-  "B2-4F",
-  "B3-2F",
-  "B3-3F",
-  "B3-4F",
-  "B5-2F",
-  "B5-3F",
-  "B5-4F",
-  "C1-2F",
-  "C1-3F",
-  "C1-4F",
-  "C2-2F",
-  "C2-3F",
-  "C2-4F",
-  "C3-2F",
-  "C3-3F",
-  "C3-4F",
+  "A1-1F", "A1-2F", "A1-3F", "A1-4F",
+  "A2-1F", "A2-2F", "A2-3F", "A2-4F",
+  "A3-2F", "A3-3F", "A3-4F",
+  "A5-2F", "A5-3F", "A5-4F",
+  "B1-2F", "B1-3F", "B1-4F",
+  "B2-1F", "B2-2F", "B2-3F", "B2-4F",
+  "B3-2F", "B3-3F", "B3-4F",
+  "B5-2F", "B5-3F", "B5-4F",
+  "C1-2F", "C1-3F", "C1-4F",
+  "C2-2F", "C2-3F", "C2-4F",
+  "C3-2F", "C3-3F", "C3-4F",
 ];
 
 const DEFAULT_BYLAWS = `第一章 總則
@@ -139,16 +113,15 @@ const theme = {
 
 const styles = {
   container: {
-    fontFamily:
-      '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
     backgroundColor: theme.bg,
     minHeight: "100vh",
-    paddingBottom: "140px", // Increased padding for scroll safety
+    paddingBottom: "140px",
     color: theme.text,
     WebkitFontSmoothing: "antialiased",
   },
   header: {
-    backgroundColor: "rgba(15, 23, 42, 0.95)", // Slightly transparent navy
+    backgroundColor: "rgba(15, 23, 42, 0.95)",
     backdropFilter: "blur(12px)",
     color: "white",
     padding: "16px 20px",
@@ -165,9 +138,8 @@ const styles = {
     borderRadius: "16px",
     padding: "24px",
     marginBottom: "20px",
-    boxShadow:
-      "0 10px 15px -3px rgba(0, 0, 0, 0.03), 0 4px 6px -2px rgba(0, 0, 0, 0.02)", // Soft diffusion shadow
-    border: "none", // Removed hard border
+    boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.03), 0 4px 6px -2px rgba(0, 0, 0, 0.02)",
+    border: "none",
     position: "relative",
     transition: "transform 0.2s ease",
   },
@@ -217,7 +189,7 @@ const styles = {
     padding: "14px 16px",
     borderRadius: "12px",
     border: "none",
-    backgroundColor: "#F1F5F9", // Light gray bg instead of border
+    backgroundColor: "#F1F5F9",
     fontSize: "16px",
     marginBottom: "16px",
     boxSizing: "border-box",
@@ -245,7 +217,7 @@ const styles = {
     borderTop: "1px solid rgba(0,0,0,0.05)",
     display: "flex",
     justifyContent: "space-around",
-    padding: "12px 0 50px 0", // Increased bottom padding to 50px to clear Sandbox button
+    padding: "12px 0 50px 0",
     zIndex: 40,
     boxShadow: "0 -4px 20px rgba(0,0,0,0.02)",
   },
@@ -275,7 +247,7 @@ const styles = {
   modal: {
     position: "fixed",
     inset: 0,
-    backgroundColor: "rgba(15, 23, 42, 0.4)", // Darker dim
+    backgroundColor: "rgba(15, 23, 42, 0.4)",
     backdropFilter: "blur(4px)",
     zIndex: 100,
     display: "flex",
@@ -341,8 +313,8 @@ const BottomNav = ({ activeTab, setActiveTab }) => {
   const tabs = [
     { id: "home", icon: Home, label: "首頁" },
     { id: "vote", icon: Vote, label: "投票" },
-    { id: "feedback", icon: MessageSquare, label: "反饋" },
-    { id: "fees", icon: Wallet, label: "繳費" }, // Icon changed to Wallet
+    { id: "financials", icon: PieChart, label: "財報" },
+    { id: "fees", icon: Wallet, label: "繳費" }, 
     { id: "profile", icon: UserCircle, label: "我的" },
   ];
   return (
@@ -620,7 +592,6 @@ const AnnouncementsTab = ({ isAdmin, account, onOpenBylaws, showToast }) => {
     }
   };
 
-  // New Feature: Toggle Pin
   const togglePin = async (id, currentStatus) => {
     try {
       await updateDoc(
@@ -1004,80 +975,28 @@ const VotingTab = ({ isAdmin, account, showToast }) => {
     }
   };
 
-    // --- 新版改票邏輯開始 ---
   const handleVote = async (vote, idx) => {
-    // 防呆：如果沒登入或資料不全
-    if (!account || !account.unit) return;
-
-    try {
-      await runTransaction(db, async (transaction) => {
-        // 1. 鎖定這張選票，確保多人同時投票也不會出錯
-        const voteRef = doc(db, "artifacts", appId, "public", "data", "votes", vote.id);
-        const sfDoc = await transaction.get(voteRef);
-
-        if (!sfDoc.exists()) {
-          throw new Error("投票資料不存在");
-        }
-
-        const data = sfDoc.data();
-        const currentOptions = data.options;
-        const targetOptionLabel = currentOptions[idx].label;
-        
-        // 2. 檢查這位住戶之前的投票紀錄
-        // 為了相容舊資料，我們從 voteRecords 裡面找該戶號「最後一次」的紀錄
-        const records = data.voteRecords || [];
-        // 找到該戶號最後一次的投票紀錄
-        const lastRecord = [...records].reverse().find(r => r.unit === account.unit);
-        
-        // 情況 A：如果要投的跟原本一樣，就不浪費資源
-        if (lastRecord && lastRecord.option === targetOptionLabel) {
-           return; // 什麼都不做，直接結束
-        }
-
-        // 情況 B：之前投過別的 -> 把舊的那一票扣掉
-        if (lastRecord) {
-           const oldOptionIndex = currentOptions.findIndex(o => o.label === lastRecord.option);
-           if (oldOptionIndex !== -1 && currentOptions[oldOptionIndex].count > 0) {
-             currentOptions[oldOptionIndex].count--;
-           }
-        }
-
-        // 情況 C：把新選的那一票加上去
-        currentOptions[idx].count++;
-
-        // 3. 準備新的紀錄
-        const newRecord = {
-          unit: account.unit,
-          option: targetOptionLabel,
-          time: Timestamp.now(),
-        };
-
-        // 4. 寫入資料庫
-        // 注意：我們不需要從 votedUsers 移除他，因為他還是屬於「已投票」狀態
-        // 但我們要把 votedUsers 加進去(如果是第一次投)
-        let newVotedUsers = data.votedUsers || [];
-        if (!newVotedUsers.includes(account.unit)) {
-          newVotedUsers.push(account.unit);
-        }
-
-        transaction.update(voteRef, {
-          options: currentOptions,
-          votedUsers: newVotedUsers,
-          voteRecords: [...records, newRecord] // 追加一筆新紀錄
-        });
-      });
-
-      showToast("✅ 投票成功！已更新紀錄");
-      
-    } catch (e) {
-      console.error("投票失敗:", e);
-      // 如果是因為重複點選一樣的選項(上面情況A)，我們不視為錯誤，但也不顯示成功
-      if (e.message !== "投票資料不存在") {
-         // 可以在這裡處理其他錯誤
-      }
+    if (vote.votedUsers.includes(account.unit)) {
+      showToast("此戶號已投票", "error");
+      return;
     }
+    const newOpts = [...vote.options];
+    newOpts[idx].count++;
+    const newRecord = {
+      unit: account.unit,
+      option: newOpts[idx].label,
+      time: Timestamp.now(),
+    };
+    await updateDoc(
+      doc(db, "artifacts", appId, "public", "data", "votes", vote.id),
+      {
+        options: newOpts,
+        votedUsers: [...vote.votedUsers, account.unit],
+        voteRecords: [...(vote.voteRecords || []), newRecord],
+      }
+    );
+    showToast("投票成功");
   };
-  // --- 新版改票邏輯結束 ---
 
   const isExpired = (vote) =>
     vote.deadline && new Date() > vote.deadline.toDate();
@@ -1414,8 +1333,7 @@ const VotingTab = ({ isAdmin, account, showToast }) => {
                 </div>
               </div>
             ))}
-    {/* 修正版：只要沒過期，按鈕永遠顯示，讓住戶可以改票 */}
-            {!expired && (
+            {!hasVoted && !expired && (
               <div
                 style={{
                   display: "grid",
@@ -1430,7 +1348,6 @@ const VotingTab = ({ isAdmin, account, showToast }) => {
                     onClick={() => handleVote(vote, idx)}
                     style={{
                       ...styles.btnSecondary,
-                      // 如果需要，未來可以在這裡加入判斷式來高亮顯示已選項目
                       backgroundColor: "white",
                       border: "1px solid #E2E8F0",
                       color: "#0F172A",
@@ -1441,15 +1358,13 @@ const VotingTab = ({ isAdmin, account, showToast }) => {
                 ))}
               </div>
             )}
-
-            {/* 修正版：提示文字改為「可修改」 */}
             {hasVoted && (
               <div
                 style={{
                   textAlign: "center",
                   fontSize: "13px",
                   color: "#10B981",
-                  marginTop: "16px",
+                  marginTop: "24px",
                   padding: "12px",
                   backgroundColor: "#ECFDF5",
                   borderRadius: "12px",
@@ -1460,8 +1375,7 @@ const VotingTab = ({ isAdmin, account, showToast }) => {
                   gap: "8px",
                 }}
               >
-                <CheckCircle size={16} /> 
-                {expired ? "您已完成投票" : "已登記 (若需修改請直接點選其他選項)"}
+                <CheckCircle size={16} /> 您已完成投票
               </div>
             )}
             {isAdmin && (
@@ -1506,175 +1420,260 @@ const VotingTab = ({ isAdmin, account, showToast }) => {
   );
 };
 
-const FeedbackTab = ({ isAdmin, account, showToast }) => {
-  const [feedbacks, setFeedbacks] = useState([]);
-  const [content, setContent] = useState("");
+// --- New Feature: Financial Reports (財務財報) ---
+const FinanceTab = ({ isAdmin, showToast }) => {
+  const [reports, setReports] = useState([]);
+  const [isEditing, setIsEditing] = useState(false);
+  const [newReport, setNewReport] = useState({
+    year: new Date().getFullYear(),
+    month: new Date().getMonth() + 1,
+    income: "",
+    expense: "",
+    summary: "", // 簡短說明
+    link: "" // 詳細報表連結
+  });
+
   useEffect(() => {
     const q = query(
-      collection(db, "artifacts", appId, "public", "data", "feedbacks"),
-      orderBy("createdAt", "desc")
+      collection(db, "artifacts", appId, "public", "data", "finance_reports"),
+      orderBy("year", "desc"),
+      orderBy("month", "desc")
     );
     return onSnapshot(q, (snap) =>
-      setFeedbacks(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+      setReports(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
     );
   }, []);
-  const send = async () => {
-    if (!content.trim()) return;
-    const authorId = account.uid || "unknown";
+
+  const handleAdd = async () => {
+    if (!newReport.income || !newReport.expense) {
+      showToast("請輸入金額", "error");
+      return;
+    }
+    
+    // 自動計算結餘
+    const income = parseInt(newReport.income) || 0;
+    const expense = parseInt(newReport.expense) || 0;
+    const balance = income - expense;
+
     try {
       await addDoc(
-        collection(db, "artifacts", appId, "public", "data", "feedbacks"),
+        collection(db, "artifacts", appId, "public", "data", "finance_reports"),
         {
-          content,
-          author: account.unit,
-          authorId,
-          status: "pending",
-          reply: "",
+          ...newReport,
+          income,
+          expense,
+          balance,
           createdAt: serverTimestamp(),
         }
       );
-      setContent("");
-      showToast("意見已送出");
+      setIsEditing(false);
+      setNewReport({
+        year: new Date().getFullYear(),
+        month: new Date().getMonth() + 1,
+        income: "",
+        expense: "",
+        summary: "",
+        link: ""
+      });
+      showToast("財報已發布");
     } catch (e) {
-      showToast("送出失敗", "error");
+      showToast("發布失敗", "error");
     }
   };
-  const reply = async (id, text) => {
-    await updateDoc(
-      doc(db, "artifacts", appId, "public", "data", "feedbacks", id),
-      { reply: text, status: "done" }
-    );
-  };
+
   const handleDelete = async (id) => {
-    if (confirm("確定刪除？")) {
+    if (confirm("確定刪除此份財報紀錄？")) {
       await deleteDoc(
-        doc(db, "artifacts", appId, "public", "data", "feedbacks", id)
+        doc(db, "artifacts", appId, "public", "data", "finance_reports", id)
       );
       showToast("已刪除");
     }
   };
 
+  const formatCurrency = (num) => {
+    return new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', minimumFractionDigits: 0 }).format(num);
+  };
+
   return (
     <div style={{ padding: "20px" }}>
-      <h2 style={styles.pageTitle}>住戶反饋</h2>
-      <div style={styles.card}>
-        <h3 style={{ marginTop: 0, fontSize: "16px" }}>新增意見 / 公設報修</h3>
-        <textarea
-          style={{ ...styles.input, height: "100px", resize: "none" }}
-          placeholder="請描述您遇到的問題..."
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-        />
-        <button onClick={send} style={styles.btnPrimary}>
-          送出反饋
+      <h2 style={styles.pageTitle}>財務透明專區</h2>
+      <p style={{ color: "#64748B", fontSize: "14px", marginBottom: "20px" }}>
+        每月定期公開社區收支狀況，詳細單據請點擊連結查看。
+      </p>
+
+      {isAdmin && (
+        <button
+          onClick={() => setIsEditing(!isEditing)}
+          style={{ ...styles.btnPrimary, marginBottom: "20px" }}
+        >
+          {isEditing ? "取消新增" : "+ 發布本月財報"}
         </button>
-      </div>
-      {feedbacks.map((item) => (
-        <div key={item.id} style={styles.card}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              marginBottom: "12px",
-              alignItems: "center",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <div
-                style={{
-                  width: "32px",
-                  height: "32px",
-                  backgroundColor: "#F1F5F9",
-                  borderRadius: "50%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: "12px",
-                  fontWeight: "bold",
-                  color: "#64748b",
-                }}
-              >
-                {item.author.split("-")[0]}
-              </div>
-              <strong>{item.author}</strong>
+      )}
+
+      {isEditing && (
+        <div style={styles.card}>
+          <h3 style={{ marginTop: 0 }}>新增月報</h3>
+          <div style={{ display: "flex", gap: "10px" }}>
+            <div style={{ flex: 1 }}>
+                <label style={{ fontSize: "12px", color: "#64748b" }}>年份</label>
+                <input
+                    type="number"
+                    style={styles.input}
+                    value={newReport.year}
+                    onChange={(e) => setNewReport({ ...newReport, year: parseInt(e.target.value) })}
+                />
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-              <span
-                style={{
-                  ...styles.badge,
-                  backgroundColor:
-                    item.status === "done" ? "#DCFCE7" : "#FEF3C7",
-                  color: item.status === "done" ? "#166534" : "#B45309",
-                }}
-              >
-                {item.status === "done" ? "已處理" : "處理中"}
-              </span>
-              {isAdmin && (
-                <button
-                  onClick={() => handleDelete(item.id)}
-                  style={{
-                    background: "none",
-                    border: "none",
-                    color: "#CBD5E1",
-                    cursor: "pointer",
-                  }}
-                >
-                  <Trash2 size={16} />
-                </button>
-              )}
+            <div style={{ flex: 1 }}>
+                <label style={{ fontSize: "12px", color: "#64748b" }}>月份</label>
+                <input
+                    type="number"
+                    style={styles.input}
+                    value={newReport.month}
+                    max={12}
+                    min={1}
+                    onChange={(e) => setNewReport({ ...newReport, month: parseInt(e.target.value) })}
+                />
             </div>
           </div>
-          <p
+
+          <label style={{ fontSize: "12px", color: "#64748b" }}>本月總收入 ($)</label>
+          <input
+            type="number"
+            style={styles.input}
+            placeholder="0"
+            value={newReport.income}
+            onChange={(e) => setNewReport({ ...newReport, income: e.target.value })}
+          />
+
+          <label style={{ fontSize: "12px", color: "#64748b" }}>本月總支出 ($)</label>
+          <input
+            type="number"
+            style={styles.input}
+            placeholder="0"
+            value={newReport.expense}
+            onChange={(e) => setNewReport({ ...newReport, expense: e.target.value })}
+          />
+
+          <label style={{ fontSize: "12px", color: "#64748b" }}>重點摘要 (選填)</label>
+          <input
+            style={styles.input}
+            placeholder="例如：本月支出包含年度電梯保養..."
+            value={newReport.summary}
+            onChange={(e) => setNewReport({ ...newReport, summary: e.target.value })}
+          />
+
+          <label style={{ fontSize: "12px", color: "#64748b" }}>詳細報表連結 (選填)</label>
+          <input
+            style={styles.input}
+            placeholder="Google Drive PDF 連結..."
+            value={newReport.link}
+            onChange={(e) => setNewReport({ ...newReport, link: e.target.value })}
+          />
+
+          <button onClick={handleAdd} style={styles.btnPrimary}>確認發布</button>
+        </div>
+      )}
+
+      <div style={{ display: "grid", gap: "16px" }}>
+        {reports.map((item) => (
+          <div
+            key={item.id}
             style={{
-              fontSize: "15px",
-              color: "#475569",
-              lineHeight: "1.5",
-              margin: "0 0 16px 0",
+              backgroundColor: "white",
+              borderRadius: "16px",
+              padding: "20px",
+              boxShadow: "0 4px 6px -1px rgba(0,0,0,0.05)",
+              border: "1px solid #F1F5F9",
+              position: "relative"
             }}
           >
-            {item.content}
-          </p>
-          {(item.reply || isAdmin) && (
-            <div
-              style={{
-                backgroundColor: "#F8FAFC",
-                padding: "16px",
-                borderRadius: "12px",
-                fontSize: "14px",
-                borderLeft: "4px solid #0F172A",
-              }}
-            >
-              <div
-                style={{
-                  fontWeight: "700",
-                  marginBottom: "8px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                  color: "#0F172A",
-                }}
-              >
-                <Shield size={14} /> 管委會回覆：
-              </div>
-              {isAdmin ? (
-                <input
-                  style={{
-                    ...styles.input,
-                    marginBottom: 0,
-                    backgroundColor: "white",
-                    border: "1px solid #e2e8f0",
-                  }}
-                  defaultValue={item.reply}
-                  onBlur={(e) => reply(item.id, e.target.value)}
-                  placeholder="輸入回覆..."
-                />
-              ) : (
-                item.reply || "尚無回覆"
-              )}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <div style={{ backgroundColor: "#F1F5F9", padding: "8px", borderRadius: "8px" }}>
+                        <PieChart size={20} color="#0F172A" />
+                    </div>
+                    <span style={{ fontSize: "18px", fontWeight: "800", color: "#0F172A" }}>
+                        {item.year}年 {item.month}月
+                    </span>
+                </div>
+                {isAdmin && (
+                    <button onClick={() => handleDelete(item.id)} style={{ border: "none", background: "none", color: "#EF4444", cursor: "pointer" }}>
+                        <Trash2 size={16} />
+                    </button>
+                )}
             </div>
-          )}
-        </div>
-      ))}
+
+            <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
+                <div style={{ flex: 1, backgroundColor: "#F8FAFC", padding: "12px", borderRadius: "12px" }}>
+                    <div style={{ fontSize: "12px", color: "#64748B", display: "flex", alignItems: "center", gap: "4px" }}>
+                        <TrendingUp size={12} color="#10B981" /> 收入
+                    </div>
+                    <div style={{ fontSize: "16px", fontWeight: "600", color: "#10B981", marginTop: "4px" }}>
+                        {formatCurrency(item.income)}
+                    </div>
+                </div>
+                <div style={{ flex: 1, backgroundColor: "#F8FAFC", padding: "12px", borderRadius: "12px" }}>
+                    <div style={{ fontSize: "12px", color: "#64748B", display: "flex", alignItems: "center", gap: "4px" }}>
+                        <TrendingDown size={12} color="#EF4444" /> 支出
+                    </div>
+                    <div style={{ fontSize: "16px", fontWeight: "600", color: "#EF4444", marginTop: "4px" }}>
+                        {formatCurrency(item.expense)}
+                    </div>
+                </div>
+            </div>
+
+            <div style={{ 
+                borderTop: "1px dashed #E2E8F0", 
+                paddingTop: "16px", 
+                display: "flex", 
+                justifyContent: "space-between", 
+                alignItems: "center" 
+            }}>
+                <div>
+                    <span style={{ fontSize: "12px", color: "#64748B" }}>本月結餘</span>
+                    <div style={{ fontSize: "20px", fontWeight: "800", color: item.balance >= 0 ? "#0F172A" : "#EF4444" }}>
+                        {formatCurrency(item.balance)}
+                    </div>
+                </div>
+                {item.link ? (
+                    <a 
+                        href={item.link} 
+                        target="_blank" 
+                        rel="noreferrer"
+                        style={{ 
+                            textDecoration: "none", 
+                            backgroundColor: "#EFF6FF", 
+                            color: "#2563EB", 
+                            padding: "8px 12px", 
+                            borderRadius: "8px", 
+                            fontSize: "13px", 
+                            fontWeight: "600",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px"
+                        }}
+                    >
+                        <FileText size={16} /> 查看詳情
+                    </a>
+                ) : (
+                    <span style={{ fontSize: "12px", color: "#94A3B8" }}>無詳細附件</span>
+                )}
+            </div>
+            
+            {item.summary && (
+                <div style={{ marginTop: "16px", fontSize: "14px", color: "#475569", lineHeight: "1.5" }}>
+                    💡 {item.summary}
+                </div>
+            )}
+          </div>
+        ))}
+
+        {reports.length === 0 && !isEditing && (
+            <div style={{ textAlign: "center", padding: "40px", color: "#94A3B8" }}>
+                尚無財報紀錄
+            </div>
+        )}
+      </div>
     </div>
   );
 };
@@ -2254,7 +2253,7 @@ const MemberArea = ({ account, onLogout, showToast }) => {
           fontFamily: "monospace",
         }}
       >
-        Fengye Zheyin Community App v2.8.1
+        Fengye Zheyin Community App v3.0.0
       </p>
     </div>
   );
@@ -2812,10 +2811,9 @@ export default function App() {
             showToast={showToast}
           />
         )}
-        {tab === "feedback" && (
-          <FeedbackTab
+        {tab === "financials" && (
+          <FinanceTab
             isAdmin={account.isAdmin}
-            account={account}
             showToast={showToast}
           />
         )}
